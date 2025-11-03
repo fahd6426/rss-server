@@ -2,13 +2,12 @@ name: Run RSS Script
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # يشغل السكربت كل 5 دقائق
-  workflow_dispatch:       # لتشغيله يدويًا من صفحة Actions
+    - cron: '*/5 * * * *'  # كل 5 دقائق
+  workflow_dispatch:
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -16,12 +15,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.x"
+          python-version: 3.11
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt || true
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 google-api-python-client
 
-      - name: Run script
-        run: |
-          python rss_fetch.py
+      - name: Run RSS Script
+        run: python rss_fetch.py
+        env:
+          BLOGGER_API_KEY: ${{ secrets.BLOGGER_API_KEY }}
+          BLOG_ID: ${{ secrets.BLOG_ID }}
