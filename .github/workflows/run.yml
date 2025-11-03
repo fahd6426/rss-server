@@ -1,0 +1,27 @@
+name: Run RSS Script
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"  # يشغل السكربت كل 5 دقائق
+  workflow_dispatch:       # لتشغيله يدويًا من صفحة Actions
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt || true
+
+      - name: Run script
+        run: |
+          python rss_fetch.py
