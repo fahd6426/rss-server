@@ -38,8 +38,8 @@ def fetch_articles():
         print(f"❌ فشل في تحميل الخلاصة: {e}")
         return []
 
-    # نقرأ الـ XML
-    soup = BeautifulSoup(resp.content, "xml")
+    # ✅ تم تعديل السطر هنا لاستخدام lxml-xml بدلاً من xml
+    soup = BeautifulSoup(resp.content, "lxml-xml")
     items = soup.find_all("item")
     print(f"📡 عدد الأخبار الموجودة في الخلاصة: {len(items)}")
 
