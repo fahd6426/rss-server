@@ -2,8 +2,8 @@ name: Run RSS Script
 
 on:
   schedule:
-    - cron: '*/5 * * * *'  # كل 5 دقائق
-  workflow_dispatch:  # تقدر تشغله يدويًا
+    - cron: '*/4 * * * *'  # كل 4 دقايق
+  workflow_dispatch:
 
 jobs:
   run-script:
