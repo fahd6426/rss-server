@@ -1,30 +1,34 @@
 import os
 import requests
 from bs4 import BeautifulSoup
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import random
 
-API_KEY = os.getenv("BLOGGER_API_KEY")
-BLOG_ID = os.getenv("BLOG_ID")
+# ناخذ الرابط والسر من الـ secrets
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 
-# ✅ روابط RSS شغالة ومفتوحة
+# مصادر RSS شغالة
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/sport/rss.xml",
     "https://feeds.skynews.com/feeds/rss/sports.xml",
 ]
 
-def load_posted_titles():
-    try:
-        with open("posted_titles.txt", "r", encoding="utf-8") as f:
-            return set(line.strip() for line in f)
-    except FileNotFoundError:
-        return set()
+def rephrase_content(content):
+    intros = [
+        "إليكم تفاصيل الخبر:",
+        "فيما يلي أبرز ما جاء:",
+        "ضمن متابعتنا للأخبار الرياضية:"
+    ]
+    endings = [
+        "تابعونا لكل جديد.",
+        "لمزيد من الأخبار زوروا المدونة.",
+        "نوافيكم بالتفاصيل أولاً بأول."
+    ]
+    return f"{random.choice(intros)} {content} {random.choice(endings)}"
 
 def fetch_articles():
     all_articles = []
     print("🚀 بدء جلب الأخبار من المصادر ...")
-
     for feed_url in RSS_FEEDS:
         print(f"📡 جلب من: {feed_url}")
         try:
@@ -38,7 +42,7 @@ def fetch_articles():
         items = soup.find_all("item")
         print(f"➡️ وجدنا {len(items)} خبر في هذا المصدر")
 
-        for item in items:
+        for item in items[:5]:
             title = item.title.get_text(strip=True) if item.title else None
             description = item.description.get_text(strip=True) if item.description else ""
             image_url = ""
@@ -49,83 +53,37 @@ def fetch_articles():
             if title:
                 all_articles.append({
                     "title": title,
-                    "content": description,
+                    "content": rephrase_content(description),
                     "image": image_url,
-                    "category": "رياضة"
+                    "labels": ["رياضة"]
                 })
 
-    print(f"📦 إجمالي الأخبار اللي جمعناها: {len(all_articles)}")
+    print(f"📦 إجمالي الأخبار التي جمعناها: {len(all_articles)}")
     return all_articles
 
-def rephrase_content(content):
-    intros = [
-        "نقدم لكم تفاصيل الخبر التالي: ",
-        "في متابعة لآخر المستجدات الرياضية: ",
-        "إليكم أبرز ما ورد: "
-    ]
-    endings = [
-        "تابعونا للمزيد من الأخبار اليومية.",
-        "زوروا المدونة للمزيد.",
-        "نوافيكم بكل جديد."
-    ]
-    return f"{random.choice(intros)}{content} {random.choice(endings)}"
-
-def post_to_blogger(article, posted_titles):
-    if article["title"] in posted_titles:
-        print(f'⏭ تخطّي خبر مكرر: {article["title"]}')
+def send_to_webhook(article):
+    if not WEBHOOK_URL:
+        print("❌ مافيه WEBHOOK_URL")
         return
-
-    try:
-        service = build("blogger", "v3", developerKey=API_KEY)
-
-        parts = []
-        if article["image"]:
-            parts.append(f'<img src="{article["image"]}" style="max-width:100%;">')
-        parts.append(f'<h2>{article["title"]}</h2>')
-        parts.append(f'<p>{rephrase_content(article["content"])}</p>')
-        parts.append(f'<p>التصنيف: {article["category"]}</p>')
-        parts.append('<p>المصدر: BBC & Sky Sports</p>')
-
-        content_html = "\n".join(parts)
-
-        post_body = {
-            "kind": "blogger#post",
-            "title": article["title"],
-            "content": content_html,
-        }
-
-        post = service.posts().insert(
-            blogId=BLOG_ID,
-            body=post_body,
-            isDraft=False
-        ).execute()
-
-        print(f'✅ تم نشر الخبر: {post["title"]}')
-        posted_titles.add(article["title"])
-        with open("posted_titles.txt", "a", encoding="utf-8") as f:
-            f.write(article["title"] + "\n")
-
-    except HttpError as e:
-        print(f"❌ خطأ أثناء النشر على Blogger: {e}")
+    data = {
+        "secret": WEBHOOK_SECRET,
+        "title": article["title"],
+        "content": article["content"],
+        "image": article["image"],
+        "labels": article["labels"],
+    }
+    r = requests.post(WEBHOOK_URL, json=data)
+    print(f"📨 أرسلنا: {article['title']} → الرد: {r.text}")
 
 def main():
-    print("🟣 تشغيل السكربت...")
-    posted_titles = load_posted_titles()
     articles = fetch_articles()
-
     if not articles:
-        print("❌ ما قدرنا نجيب أخبار من أي مصدر.")
+        print("❌ ما فيه أخبار")
         return
 
-    unique_articles = []
-    seen_titles = set()
-    for art in articles:
-        if art["title"] not in seen_titles:
-            unique_articles.append(art)
-            seen_titles.add(art["title"])
-
-    for article in unique_articles[:5]:
-        post_to_blogger(article, posted_titles)
+    # نرسل أول 5 بس
+    for art in articles[:5]:
+        send_to_webhook(art)
 
     print("✅ انتهى السكربت.")
 
