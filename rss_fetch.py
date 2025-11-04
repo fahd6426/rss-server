@@ -6,18 +6,20 @@ from googleapiclient.errors import HttpError
 import random
 
 # =========================
-# إعدادات من GitHub Secrets
+# المفاتيح من GitHub Secrets
 # =========================
 API_KEY = os.getenv("BLOGGER_API_KEY")
 BLOG_ID = os.getenv("BLOG_ID")
 
-# رابط الـ RSS من يلا كورة
-RSS_URL = "https://www.yallakora.com/rss/latest-posts"
+# ✅ مصادر RSS مفتوحة
+RSS_FEEDS = [
+    "https://www.kooora.com/rss/default.aspx",     # كووورة
+    "https://www.espn.com/espn/rss/news",           # ESPN أخبار عامة
+]
 
-
-# =========================================
-# تحميل العناوين اللي نشرناها قبل (عشان ما نكرر)
-# =========================================
+# =========================
+# تحميل العناوين القديمة
+# =========================
 def load_posted_titles():
     try:
         with open("posted_titles.txt", "r", encoding="utf-8") as f:
@@ -25,88 +27,84 @@ def load_posted_titles():
     except FileNotFoundError:
         return set()
 
-
-# =========================================
-# جلب الأخبار من RSS
-# =========================================
+# =========================
+# جلب الأخبار من كل المصادر
+# =========================
 def fetch_articles():
-    print("🚀 بدء جلب الأخبار من خلاصة RSS ...")
-    try:
-        resp = requests.get(RSS_URL, timeout=15)
-        resp.raise_for_status()
-    except Exception as e:
-        print(f"❌ فشل في تحميل الخلاصة: {e}")
-        return []
+    all_articles = []
+    print("🚀 بدء جلب الأخبار من المصادر ...")
 
-    # ✅ تم تعديل السطر هنا لاستخدام lxml-xml بدلاً من xml
-    soup = BeautifulSoup(resp.content, "lxml-xml")
-    items = soup.find_all("item")
-    print(f"📡 عدد الأخبار الموجودة في الخلاصة: {len(items)}")
+    for feed_url in RSS_FEEDS:
+        print(f"📡 جلب من: {feed_url}")
+        try:
+            resp = requests.get(feed_url, timeout=15)
+            resp.raise_for_status()
+        except Exception as e:
+            print(f"❌ فشل جلب المصدر {feed_url}: {e}")
+            continue
 
-    articles = []
-    for item in items:
-        title = item.title.get_text(strip=True) if item.title else None
-        description = item.description.get_text(strip=True) if item.description else ""
-        # نحاول نجيب صورة لو موجودة
-        image_url = ""
-        enclosure = item.find("enclosure")
-        if enclosure and enclosure.get("url"):
-            image_url = enclosure.get("url")
+        # نستخدم lxml-xml لأننا ثبتناه في الـ workflow
+        soup = BeautifulSoup(resp.content, "lxml-xml")
+        items = soup.find_all("item")
+        print(f"➡️ وجدنا {len(items)} خبر في هذا المصدر")
 
-        if title:
-            articles.append({
-                "title": title,
-                "content": description,
-                "image": image_url,
-                "category": "رياضة"
-            })
+        for item in items:
+            title = item.title.get_text(strip=True) if item.title else None
+            description = item.description.get_text(strip=True) if item.description else ""
+            # صورة لو فيه
+            image_url = ""
+            enclosure = item.find("enclosure")
+            if enclosure and enclosure.get("url"):
+                image_url = enclosure.get("url")
 
-    return articles
+            if title:
+                all_articles.append({
+                    "title": title,
+                    "content": description,
+                    "image": image_url,
+                    "category": "رياضة"
+                })
 
+    print(f"📦 إجمالي الأخبار اللي جمعناها من كل المصادر: {len(all_articles)}")
+    return all_articles
 
-# =========================================
+# =========================
 # إعادة صياغة بسيطة
-# =========================================
+# =========================
 def rephrase_content(content):
     intros = [
-        "نقدم لكم أبرز ما جاء في الخبر التالي: ",
-        "في متابعة لأهم أخبار الكرة: ",
-        "تفاصيل الخبر الرياضي التالي: "
+        "نقدم لكم تفاصيل الخبر التالي: ",
+        "في متابعة لآخر المستجدات الرياضية: ",
+        "إليكم أبرز ما ورد: "
     ]
     endings = [
-        "تابعونا للمزيد من التغطيات اليومية.",
-        "لمزيد من الأخبار الرياضية زوروا المدونة.",
-        "نوافيكم بكل جديد أولاً بأول."
+        "تابعونا للمزيد من الأخبار اليومية.",
+        "زوروا المدونة للمزيد.",
+        "نوافيكم بكل جديد."
     ]
-    intro = random.choice(intros)
-    ending = random.choice(endings)
-    return f"{intro}{content} {ending}"
+    return f"{random.choice(intros)}{content} {random.choice(endings)}"
 
-
-# =========================================
-# نشر الخبر على Blogger
-# =========================================
+# =========================
+# نشر على Blogger
+# =========================
 def post_to_blogger(article, posted_titles):
-    # لو العنوان مكرر لا تنشره
+    # لو العنوان مكرر لا تنشر
     if article["title"] in posted_titles:
-        print(f'⏭ تم تخطي خبر مكرر: {article["title"]}')
+        print(f'⏭ تخطّي خبر مكرر: {article["title"]}')
         return
 
     try:
         service = build("blogger", "v3", developerKey=API_KEY)
 
-        # نبني المحتوى
-        html_parts = []
-
+        parts = []
         if article["image"]:
-            html_parts.append(f'<img src="{article["image"]}" style="max-width:100%;">')
+            parts.append(f'<img src="{article["image"]}" style="max-width:100%;">')
+        parts.append(f'<h2>{article["title"]}</h2>')
+        parts.append(f'<p>{rephrase_content(article["content"])}</p>')
+        parts.append(f'<p>التصنيف: {article["category"]}</p>')
+        parts.append('<p>المصدر: مصادر رياضية</p>')
 
-        html_parts.append(f'<h2>{article["title"]}</h2>')
-        html_parts.append(f'<p>{rephrase_content(article["content"])}</p>')
-        html_parts.append(f'<p>التصنيف: {article["category"]}</p>')
-        html_parts.append('<p>المصدر: يلا كورة</p>')
-
-        content_html = "\n".join(html_parts)
+        content_html = "\n".join(parts)
 
         post_body = {
             "kind": "blogger#post",
@@ -117,38 +115,45 @@ def post_to_blogger(article, posted_titles):
         post = service.posts().insert(
             blogId=BLOG_ID,
             body=post_body,
-            isDraft=False  # لو تبيها مسودة خله True
+            isDraft=False
         ).execute()
 
         print(f'✅ تم نشر الخبر: {post["title"]}')
 
-        # نحفظ العنوان في الملف
+        # نحفظه في الملف
         posted_titles.add(article["title"])
         with open("posted_titles.txt", "a", encoding="utf-8") as f:
             f.write(article["title"] + "\n")
 
     except HttpError as e:
-        # هنا غالباً لو طلع 403 يكون من صلاحيات Blogger أو إن الـ API key ما يكفي
+        # هنا لو طلع 403 خلاص نعرف إن المفتاح ما يسمح بالنشر
         print(f"❌ خطأ أثناء النشر على Blogger: {e}")
 
-
-# =========================================
+# =========================
 # الدالة الرئيسية
-# =========================================
+# =========================
 def main():
     print("🟣 تشغيل السكربت...")
     posted_titles = load_posted_titles()
     articles = fetch_articles()
 
     if not articles:
-        print("❌ ما فيه أخبار نستوردها من الـ RSS. تأكد من الرابط أو جرب مصدر ثاني.")
+        print("❌ ما قدرنا نجيب أخبار من أي مصدر. جرب رابط RSS مختلف.")
         return
 
-    for article in articles[:5]:  # ننشر أول 5 بس عشان ما يطفح
+    # نشيل التكرار بالعنوان
+    unique_articles = []
+    seen_titles = set()
+    for art in articles:
+        if art["title"] not in seen_titles:
+            unique_articles.append(art)
+            seen_titles.add(art["title"])
+
+    # ننشر أول 5 بس
+    for article in unique_articles[:5]:
         post_to_blogger(article, posted_titles)
 
     print("✅ انتهى السكربت.")
-
 
 if __name__ == "__main__":
     main()
