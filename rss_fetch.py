@@ -5,21 +5,15 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import random
 
-# =========================
-# المفاتيح من GitHub Secrets
-# =========================
 API_KEY = os.getenv("BLOGGER_API_KEY")
 BLOG_ID = os.getenv("BLOG_ID")
 
-# ✅ مصادر RSS مفتوحة
+# ✅ روابط RSS شغالة ومفتوحة
 RSS_FEEDS = [
-    "https://www.kooora.com/rss/default.aspx",     # كووورة
-    "https://www.espn.com/espn/rss/news",           # ESPN أخبار عامة
+    "https://feeds.bbci.co.uk/sport/rss.xml",
+    "https://feeds.skynews.com/feeds/rss/sports.xml",
 ]
 
-# =========================
-# تحميل العناوين القديمة
-# =========================
 def load_posted_titles():
     try:
         with open("posted_titles.txt", "r", encoding="utf-8") as f:
@@ -27,9 +21,6 @@ def load_posted_titles():
     except FileNotFoundError:
         return set()
 
-# =========================
-# جلب الأخبار من كل المصادر
-# =========================
 def fetch_articles():
     all_articles = []
     print("🚀 بدء جلب الأخبار من المصادر ...")
@@ -43,7 +34,6 @@ def fetch_articles():
             print(f"❌ فشل جلب المصدر {feed_url}: {e}")
             continue
 
-        # نستخدم lxml-xml لأننا ثبتناه في الـ workflow
         soup = BeautifulSoup(resp.content, "lxml-xml")
         items = soup.find_all("item")
         print(f"➡️ وجدنا {len(items)} خبر في هذا المصدر")
@@ -51,7 +41,6 @@ def fetch_articles():
         for item in items:
             title = item.title.get_text(strip=True) if item.title else None
             description = item.description.get_text(strip=True) if item.description else ""
-            # صورة لو فيه
             image_url = ""
             enclosure = item.find("enclosure")
             if enclosure and enclosure.get("url"):
@@ -65,12 +54,9 @@ def fetch_articles():
                     "category": "رياضة"
                 })
 
-    print(f"📦 إجمالي الأخبار اللي جمعناها من كل المصادر: {len(all_articles)}")
+    print(f"📦 إجمالي الأخبار اللي جمعناها: {len(all_articles)}")
     return all_articles
 
-# =========================
-# إعادة صياغة بسيطة
-# =========================
 def rephrase_content(content):
     intros = [
         "نقدم لكم تفاصيل الخبر التالي: ",
@@ -84,11 +70,7 @@ def rephrase_content(content):
     ]
     return f"{random.choice(intros)}{content} {random.choice(endings)}"
 
-# =========================
-# نشر على Blogger
-# =========================
 def post_to_blogger(article, posted_titles):
-    # لو العنوان مكرر لا تنشر
     if article["title"] in posted_titles:
         print(f'⏭ تخطّي خبر مكرر: {article["title"]}')
         return
@@ -102,7 +84,7 @@ def post_to_blogger(article, posted_titles):
         parts.append(f'<h2>{article["title"]}</h2>')
         parts.append(f'<p>{rephrase_content(article["content"])}</p>')
         parts.append(f'<p>التصنيف: {article["category"]}</p>')
-        parts.append('<p>المصدر: مصادر رياضية</p>')
+        parts.append('<p>المصدر: BBC & Sky Sports</p>')
 
         content_html = "\n".join(parts)
 
@@ -119,29 +101,22 @@ def post_to_blogger(article, posted_titles):
         ).execute()
 
         print(f'✅ تم نشر الخبر: {post["title"]}')
-
-        # نحفظه في الملف
         posted_titles.add(article["title"])
         with open("posted_titles.txt", "a", encoding="utf-8") as f:
             f.write(article["title"] + "\n")
 
     except HttpError as e:
-        # هنا لو طلع 403 خلاص نعرف إن المفتاح ما يسمح بالنشر
         print(f"❌ خطأ أثناء النشر على Blogger: {e}")
 
-# =========================
-# الدالة الرئيسية
-# =========================
 def main():
     print("🟣 تشغيل السكربت...")
     posted_titles = load_posted_titles()
     articles = fetch_articles()
 
     if not articles:
-        print("❌ ما قدرنا نجيب أخبار من أي مصدر. جرب رابط RSS مختلف.")
+        print("❌ ما قدرنا نجيب أخبار من أي مصدر.")
         return
 
-    # نشيل التكرار بالعنوان
     unique_articles = []
     seen_titles = set()
     for art in articles:
@@ -149,7 +124,6 @@ def main():
             unique_articles.append(art)
             seen_titles.add(art["title"])
 
-    # ننشر أول 5 بس
     for article in unique_articles[:5]:
         post_to_blogger(article, posted_titles)
 
