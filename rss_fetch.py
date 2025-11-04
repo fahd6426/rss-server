@@ -30,8 +30,49 @@ def translate_text(text, target_lang="ar"):
         data = r.json()
         return "".join([part[0] for part in data[0]])
     except Exception:
-        # لو فشلت الترجمة ننشر النص الأصلي
-        return text
+        return text  # لو الترجمة فشلت ننشر النص الأصلي
+
+def build_article(ar_title: str, ar_content: str) -> str:
+    """نطوّل الخبر ونخليه مرتب."""
+    intro_choices = [
+        "في هذا الخبر نستعرض لكم أبرز ما جاء في التقارير الرياضية اليوم:",
+        "متابعةً لآخر المستجدات الرياضية، إليكم التفاصيل:",
+        "ضمن تغطيتنا اليومية لعالم الرياضة، نعرض لكم ما يلي:"
+    ]
+    outro_choices = [
+        "تابعونا باستمرار لمعرفة آخر الأخبار والتقارير.",
+        "نوافيكم بكل جديد لحظة بلحظة.",
+        "زوروا المدونة باستمرار لمزيد من المواضيع الرياضية."
+    ]
+
+    intro = random.choice(intro_choices)
+    outro = random.choice(outro_choices)
+
+    # لو الوصف قصير جدًا نحاول نعيده مرتين عشان يصير أطول شوي
+    body = ar_content.strip()
+    if len(body) < 120:
+        body = body + " " + ar_content.strip()
+
+    # نكوّن ملخص بنقاط
+    bullet_intro = "أهم ما جاء في الخبر:"
+    bullets = [
+        f"- العنوان: {ar_title}",
+        "- الخبر من مصدر موثوق.",
+        "- التفاصيل الكاملة بالأسفل."
+    ]
+
+    bullets_text = "\n".join(bullets)
+
+    article = f"""{intro}
+
+{body}
+
+{bullet_intro}
+{bullets_text}
+
+{outro}
+"""
+    return article
 
 def fetch_articles():
     all_articles = []
@@ -47,13 +88,12 @@ def fetch_articles():
 
         soup = BeautifulSoup(resp.content, "lxml-xml")
         items = soup.find_all("item")
-        print(f"➡️ وجدنا {len(items)} خبر في هذا المصدر")
 
         for item in items:
             title = item.title.get_text(strip=True) if item.title else ""
             description = item.description.get_text(strip=True) if item.description else ""
 
-            # نحاول نجيب صورة
+            # نحاول نجيب صورة من الـ enclosure
             image_url = ""
             enclosure = item.find("enclosure")
             if enclosure and enclosure.get("url"):
@@ -73,20 +113,23 @@ def send_to_webhook(article):
         print("❌ WEBHOOK_URL مفقود")
         return
 
-    # نترجم للغة العربية
+    # ترجمة العنوان والمحتوى
     title_ar = translate_text(article["title"])
     content_ar = translate_text(article["content"])
 
+    # نبني مقالة أطول ومهيأة
+    long_content = build_article(title_ar, content_ar)
+
     data = {
-        "secret": WEBHOOK_SECRET,
-        "title": title_ar,
-        "content": content_ar,
-        "image": article["image"],
-        "labels": ["رياضة"]
+      "secret": WEBHOOK_SECRET,
+      "title": title_ar,
+      "content": long_content,
+      "image": article["image"],
+      "labels": ["رياضة"]
     }
 
     r = requests.post(WEBHOOK_URL, json=data)
-    print(f"📨 أرسلنا: {title_ar[:50]} → الرد: {r.text}")
+    print(f"📨 أرسلنا: {title_ar[:60]} → الرد: {r.text}")
 
 def main():
     articles = fetch_articles()
